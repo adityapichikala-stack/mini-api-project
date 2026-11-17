@@ -83,6 +83,153 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Day 2 API Tests",
+      "item": [
+        {
+          "name": "Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"preserves health response\", function () { pm.expect(pm.response.json()).to.eql({ status: \"healthy\", message: \"Mini API is running\" }); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Country - Japan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"returns country details\", function () { pm.expect(pm.response.json()).to.have.all.keys(\"country\", \"capital\", \"currency\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/countries/Japan"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Travel budget - Japan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"returns conversion details\", function () { pm.expect(pm.response.json()).to.have.all.keys(\"country\", \"currency\", \"rate\", \"rate_date\", \"budget_inr\", \"budget_local\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/roam/Japan?budget_inr=150000"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unknown country - Atlantis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 404\", function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/countries/Atlantis"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid budget - zero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 422\", function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/roam/Japan?budget_inr=0"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid budget - negative",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 422\", function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/roam/Japan?budget_inr=-100"
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
     }
   ]
 }
