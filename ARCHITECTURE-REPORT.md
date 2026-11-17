@@ -16,7 +16,13 @@ In other words, this project is the server to Postman, and a client to the exter
 | Component | File | Responsibility |
 |---|---|---|
 | API server and composition root | [main.py](./main.py) | Creates the FastAPI app, constructs and wires clients and service, defines routes, and maps application exceptions to HTTP responses. |
-| Configuration | [config.py](./config.py) | Loads `.env`, validates required base URLs, and sets a positive API timeout (10 seconds by default). |
+| Configuration | [config.py](./config.py) | Loads `.env`, validates required API and database URLs, sets the API timeout, and reads the log level. |
+| Logging setup | [logging_setup.py](./logging_setup.py) | Configures one Loguru stdout sink at application startup using the configured log level. |
+| Database models and sessions | [db.py](./db.py) | Defines the SQLAlchemy engine, declarative base, trip model, session factory, per-request session dependency, and startup schema creation. |
+| Trip repository | [repositories/trip_repository.py](./repositories/trip_repository.py) | Contains the database CRUD operations for trips. |
+| Trip service | [services/trip_service.py](./services/trip_service.py) | Applies trip use cases, currency lookups, cached exchange rates, and Decimal budget conversion. |
+| API schemas | [schemas.py](./schemas.py) | Defines request validation and response serialization models for trips. |
+| Container orchestration | [docker-compose.yml](./docker-compose.yml) | Runs PostgreSQL and the API, persists database files in a named volume, and gates API startup on database health. |
 | Domain exceptions | [exceptions.py](./exceptions.py) | Defines `CountryNotFoundError` and `ExternalAPIError` without coupling them to FastAPI. |
 | CountriesNow adapter | [clients/countries_client.py](./clients/countries_client.py) | Makes async HTTP requests to CountriesNow, validates its response structure, and returns country/currency/capital values. |
 | Frankfurter adapter | [clients/rates_client.py](./clients/rates_client.py) | Makes async HTTP requests to Frankfurter, validates the rate and date, and returns Python values. |
@@ -25,6 +31,12 @@ In other words, this project is the server to Postman, and a client to the exter
 ## 3. Server and request flow
 
 Uvicorn runs the ASGI application object named `app` from `main.py`. FastAPI receives incoming HTTP requests, matches the method and path to a route, validates route parameters, calls the route function, and serializes its returned Python dictionary as JSON.
+
+On application startup, the FastAPI lifespan creates the trips table and calls `check_database_connection()` from `db.py`. That function runs `SELECT 1` through the SQLAlchemy engine. A successful connection is logged without including connection details. A connection error is reported with a generic message that does not expose the database URL or password; the application does not finish starting until the connection succeeds. The engine is disposed during application shutdown.
+
+The same lifespan configures Loguru once, removes its default sink, and sends application logs to standard output. HTTP middleware measures every request with `time.perf_counter()` and logs method, path, response status, and elapsed milliseconds. The request path excludes query parameters. Both external API adapters log method, path, HTTP status, and latency; timeout and connection failures are logged without exception URLs or secret values. An unhandled request failure is logged with a generic 500 entry and re-raised so FastAPI can produce its normal server error response.
+
+In Docker Compose, the app service depends on the database service's `service_healthy` condition. PostgreSQL's `pg_isready` healthcheck must pass before Compose starts the app. Within the Compose network, the app connects to hostname `db`. For a Python process running directly on the laptop, `localhost` refers to the laptop, so its database URL instead uses the published host port.
 
 For service-backed routes, `Depends(get_travel_service)` asks FastAPI to provide a `TravelService`. The route passes the request values to that service and returns the resulting data. It does not construct an outbound HTTP request itself.
 
@@ -36,6 +48,18 @@ The health route is independent of the external APIs and directly returns:
   "message": "Mini API is running"
 }
 ```
+
+The five trip routes use `get_db()` to receive a request-scoped SQLAlchemy session. `get_db()` creates one session per request and closes it in a `finally` block. `get_trip_service()` builds a `TripRepository` with that session, then injects the repository and the two API clients into `TripService`.
+
+### Trip routes
+
+- `POST /trips`: validates a `TripCreate`, looks up the destination currency through CountriesNow, and saves the trip. It returns `201`.
+- `GET /trips`: reads trips through `TripRepository`, obtains one Frankfurter rate per distinct currency for that request, then uses `Decimal` arithmetic and rounds each local budget to two places.
+- `GET /trips/{trip_id}`: returns one trip or raises `TripNotFoundError`.
+- `PATCH /trips/{trip_id}`: updates supplied fields. If the country differs, it resolves the new currency before persisting the change.
+- `DELETE /trips/{trip_id}`: deletes the record and returns an empty `204`, or raises `TripNotFoundError`.
+
+The `trips` table stores `traveller`, `country`, a three-character `currency_code`, `budget_inr` as `NUMERIC(12, 2)`, `travel_date` as `DATE`, and `created_at` as a timezone-aware timestamp with a database-side current-time default. Pydantic validators reject zero/negative budgets, past dates, missing required create fields, invalid types, and explicit nulls in supplied PATCH fields. Today's date is allowed. Decimal-valued response fields are serialized as JSON strings to preserve precision.
 
 ### `GET /countries/{name}`
 
@@ -94,7 +118,7 @@ At module import, `main.py` reads the settings object from `config.py`, creates 
 
 ## 7. Configuration and error mapping
 
-`config.py` loads environment variables with `python-dotenv`. `API_1_BASE_URL` and `API_2_BASE_URL` are required; a missing or blank value raises a startup-time `RuntimeError` that names the missing variable. `API_TIMEOUT_SECONDS` defaults to `10` and must be positive and finite.
+`config.py` loads environment variables with `python-dotenv`. `API_1_BASE_URL`, `API_2_BASE_URL`, and `DATABASE_URL` are required; a missing or blank value raises a startup-time `RuntimeError` that names the missing variable. `API_TIMEOUT_SECONDS` defaults to `10` and must be positive and finite. `LOG_LEVEL` defaults to `INFO` and is validated against supported Loguru levels.
 
 Clients raise application exceptions; `main.py` is the HTTP boundary that maps them:
 
@@ -106,6 +130,8 @@ Clients raise application exceptions; `main.py` is the HTTP boundary that maps t
 
 This keeps HTTP status codes out of the adapters and service.
 
+Trip routes translate missing records through `NotFoundError` into HTTP `404`. Invalid IDs, invalid budgets, and past travel dates are rejected by FastAPI/Pydantic with HTTP `422`.
+
 ## 8. Design benefits
 
 - **Separation of responsibilities:** configuration, vendor HTTP access, use-case logic, and HTTP routing are in separate modules.
@@ -113,6 +139,9 @@ This keeps HTTP status codes out of the adapters and service.
 - **Vendor isolation:** the service consumes methods and values rather than external JSON structures.
 - **Consistent error handling:** client failures are translated once at the API boundary.
 - **Async I/O:** outbound network requests use `httpx.AsyncClient`, allowing the server to await I/O without blocking the route's event loop.
+- **Database readiness:** Compose waits for PostgreSQL's healthcheck, and the application verifies connectivity before serving requests.
+- **Repository pattern:** `TripRepository` is the only trip CRUD layer that queries or mutates database records. `TripService` depends on that repository instead of SQLAlchemy.
+- **Per-request dependency injection:** FastAPI provides one database session to the route dependency; the repository and trip service are assembled for that request, and the session is closed after the response.
 
 ## 9. Important implementation detail
 
