@@ -223,6 +223,151 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Day 3 Trip API Tests",
+      "item": [
+        {
+          "name": "Create Trip",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"returns created trip\", function () { var trip = pm.response.json(); pm.expect(trip.id).to.be.a(\"number\"); pm.collectionVariables.set(\"trip_id\", trip.id); pm.expect(trip.currency_code).to.eql(\"JPY\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"traveller\": \"Postman Traveler\",\n  \"country\": \"Japan\",\n  \"budget_inr\": \"150000.00\",\n  \"travel_date\": \"2030-01-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/trips"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Trips",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns 200 with exchange fields\", function () { pm.response.to.have.status(200); var trips = pm.response.json(); if (trips.length > 0) { pm.expect(trips[0]).to.have.property(\"rate\"); pm.expect(trips[0]).to.have.property(\"budget_local\"); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trips"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Trip",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns the created trip\", function () { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get(\"trip_id\"))); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Trip",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"updates trip\", function () { pm.response.to.have.status(200); pm.expect(pm.response.json().country).to.eql(\"Canada\"); pm.expect(pm.response.json().currency_code).to.eql(\"CAD\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country\": \"Canada\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Trip",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"returns empty 204\", function () { pm.response.to.have.status(204); pm.expect(pm.response.text()).to.eql(\"\"); });",
+                  "pm.collectionVariables.unset(\"trip_id\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}"
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [

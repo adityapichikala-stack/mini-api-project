@@ -10,12 +10,18 @@ class Settings:
     api_1_base_url: str
     api_2_base_url: str
     api_timeout_seconds: float
+    database_url: str
+    log_level: str
 
 
 def load_settings() -> Settings:
     load_dotenv()
 
-    required_variables = ("API_1_BASE_URL", "API_2_BASE_URL")
+    required_variables = (
+        "API_1_BASE_URL",
+        "API_2_BASE_URL",
+        "DATABASE_URL",
+    )
     missing_variables = [
         variable
         for variable in required_variables
@@ -34,10 +40,25 @@ def load_settings() -> Settings:
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise RuntimeError("API_TIMEOUT_SECONDS must be a positive number")
 
+    log_level = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+    supported_log_levels = {
+        "TRACE",
+        "DEBUG",
+        "INFO",
+        "SUCCESS",
+        "WARNING",
+        "ERROR",
+        "CRITICAL",
+    }
+    if log_level not in supported_log_levels:
+        raise RuntimeError("LOG_LEVEL must be a supported Loguru level")
+
     return Settings(
         api_1_base_url=os.environ["API_1_BASE_URL"].rstrip("/"),
         api_2_base_url=os.environ["API_2_BASE_URL"].rstrip("/"),
         api_timeout_seconds=timeout_seconds,
+        database_url=os.environ["DATABASE_URL"].strip(),
+        log_level=log_level,
     )
 
 

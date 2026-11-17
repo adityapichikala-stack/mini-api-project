@@ -1,4 +1,7 @@
+from time import perf_counter
+
 import httpx
+from loguru import logger
 
 from exceptions import CountryNotFoundError, ExternalAPIError
 
@@ -46,21 +49,55 @@ class CountriesNowClient:
         endpoint: str,
         country: str,
     ) -> dict[str, object]:
-        url = f"{self.base_url}/{endpoint}/q"
+        path = f"/{endpoint}/q"
+        url = f"{self.base_url}{path}"
+        started_at = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(url, params={"country": country})
+                elapsed_ms = (perf_counter() - started_at) * 1000
+                logger.info(
+                    "CountriesNow GET {} -> {} in {:.2f} ms",
+                    path,
+                    response.status_code,
+                    elapsed_ms,
+                )
                 response.raise_for_status()
                 payload = response.json()
         except httpx.TimeoutException as exc:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.warning(
+                "CountriesNow GET {} -> timeout in {:.2f} ms",
+                path,
+                elapsed_ms,
+            )
             raise ExternalAPIError("CountriesNow request timed out") from exc
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise CountryNotFoundError(
+                    f"Country '{country}' not found"
+                ) from exc
             raise ExternalAPIError(
                 "CountriesNow returned an unsuccessful response"
             ) from exc
+        except httpx.ConnectError as exc:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.warning(
+                "CountriesNow GET {} -> connection failure in {:.2f} ms",
+                path,
+                elapsed_ms,
+            )
+            raise ExternalAPIError("CountriesNow is currently unavailable") from exc
         except httpx.RequestError as exc:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.error(
+                "CountriesNow GET {} -> request failure in {:.2f} ms",
+                path,
+                elapsed_ms,
+            )
             raise ExternalAPIError("CountriesNow is currently unavailable") from exc
         except (ValueError, TypeError) as exc:
+            logger.error("CountriesNow GET {} -> invalid response", path)
             raise ExternalAPIError("CountriesNow returned an invalid response") from exc
 
         if not isinstance(payload, dict):

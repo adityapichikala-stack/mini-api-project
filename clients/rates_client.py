@@ -1,6 +1,8 @@
 import math
+from time import perf_counter
 
 import httpx
+from loguru import logger
 
 from exceptions import ExternalAPIError
 
@@ -19,21 +21,51 @@ class FrankfurterClient:
         base: str,
         quote: str,
     ) -> tuple[float, str | None]:
-        url = f"{self.base_url}/rate/{base}/{quote}"
+        path = f"/rate/{base}/{quote}"
+        url = f"{self.base_url}{path}"
+        started_at = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(url)
+                elapsed_ms = (perf_counter() - started_at) * 1000
+                logger.info(
+                    "Frankfurter GET {} -> {} in {:.2f} ms",
+                    path,
+                    response.status_code,
+                    elapsed_ms,
+                )
                 response.raise_for_status()
                 payload = response.json()
         except httpx.TimeoutException as exc:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.warning(
+                "Frankfurter GET {} -> timeout in {:.2f} ms",
+                path,
+                elapsed_ms,
+            )
             raise ExternalAPIError("Frankfurter request timed out") from exc
         except httpx.HTTPStatusError as exc:
             raise ExternalAPIError(
                 "Frankfurter returned an unsuccessful response"
             ) from exc
+        except httpx.ConnectError as exc:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.warning(
+                "Frankfurter GET {} -> connection failure in {:.2f} ms",
+                path,
+                elapsed_ms,
+            )
+            raise ExternalAPIError("Frankfurter is currently unavailable") from exc
         except httpx.RequestError as exc:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.error(
+                "Frankfurter GET {} -> request failure in {:.2f} ms",
+                path,
+                elapsed_ms,
+            )
             raise ExternalAPIError("Frankfurter is currently unavailable") from exc
         except (ValueError, TypeError) as exc:
+            logger.error("Frankfurter GET {} -> invalid response", path)
             raise ExternalAPIError("Frankfurter returned an invalid response") from exc
 
         if not isinstance(payload, dict):
